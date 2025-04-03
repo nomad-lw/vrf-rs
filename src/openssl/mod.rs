@@ -32,7 +32,7 @@ use std::{
 use failure::Fail;
 use hmac_sha256::HMAC;
 
-use openssl::{
+pub use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcPoint, PointConversionForm},
     error::ErrorStack,
@@ -188,7 +188,7 @@ impl ECVRF {
     /// # Returns
     ///
     /// * If successful, an `EcPoint` representing the public key.
-    fn derive_public_key_point(&mut self, secret_key: &BigNum) -> Result<EcPoint, Error> {
+    pub fn derive_public_key_point(&mut self, secret_key: &BigNum) -> Result<EcPoint, Error> {
         let mut point = EcPoint::new(self.group.as_ref())?;
         // secret_key = point*generator
         point.mul_generator(&self.group, secret_key, &self.bn_ctx)?;
@@ -208,6 +208,7 @@ impl ECVRF {
     pub fn derive_public_key(&mut self, secret_key: &[u8]) -> Result<Vec<u8>, Error> {
         let secret_key_bn = BigNum::from_slice(secret_key)?;
         let point = self.derive_public_key_point(&secret_key_bn)?;
+
         let bytes = point.to_bytes(
             &self.group,
             PointConversionForm::COMPRESSED,
@@ -334,7 +335,7 @@ impl ECVRF {
     /// # Returns
     ///
     /// * If successful, an `EcPoint` representing the converted point.
-    fn arbitrary_string_to_point(&mut self, data: &[u8]) -> Result<EcPoint, Error> {
+    pub fn arbitrary_string_to_point(&mut self, data: &[u8]) -> Result<EcPoint, Error> {
         let mut v = vec![0x02];
         v.extend(data);
         let point = EcPoint::from_bytes(&self.group, &v, &mut self.bn_ctx)?;
@@ -351,7 +352,7 @@ impl ECVRF {
     /// # Returns
     ///
     /// * If successful, a `BigNum` representing the hash of the points, truncated to length `n`.
-    fn hash_points(&mut self, points: &[&EcPoint]) -> Result<BigNum, Error> {
+    pub fn hash_points(&mut self, points: &[&EcPoint]) -> Result<BigNum, Error> {
         // point_bytes = [P1||P2||...||Pn]
         let point_bytes: Result<Vec<u8>, Error> = points.iter().try_fold(
             vec![self.cipher_suite.suite_string(), 0x02],
@@ -385,7 +386,7 @@ impl ECVRF {
     /// # Returns
     ///
     /// * A tuple containing the gamma `EcPoint`, and `BigNum` parameters `c` and `s`.
-    fn decode_proof(&mut self, pi: &[u8]) -> Result<(EcPoint, BigNum, BigNum), Error> {
+    pub fn decode_proof(&mut self, pi: &[u8]) -> Result<(EcPoint, BigNum, BigNum), Error> {
         let gamma_oct = if self.qlen % 8 > 0 {
             self.qlen / 8 + 2
         } else {
@@ -419,7 +420,7 @@ impl ECVRF {
     /// # Returns
     ///
     /// * A vector of octets with the VRF hash output.
-    fn gamma_to_hash(&mut self, gamma: &EcPoint) -> Result<Vec<u8>, Error> {
+    pub fn gamma_to_hash(&mut self, gamma: &EcPoint) -> Result<Vec<u8>, Error> {
         // Multiply gamma with cofactor
         let mut gamma_cof = EcPoint::new(self.group.as_ref())?;
         gamma_cof.mul(
