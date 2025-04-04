@@ -291,7 +291,7 @@ impl ECVRF {
     /// # Returns
     ///
     /// * If successful, an `EcPoint` representing the hashed point.
-    fn hash_to_try_and_increment(
+    pub fn hash_to_try_and_increment(
         &mut self,
         public_key: &EcPoint,
         alpha: &[u8],
@@ -470,6 +470,80 @@ impl ECVRF {
 
         self.gamma_to_hash(&gamma_point)
     }
+
+    /// Computes the U component for VRF verification (U = sB - cY)
+    ///
+    /// # Arguments
+    ///
+    /// * `public_key_point` - An `EcPoint` referencing the public key (Y)
+    /// * `s` - A `BigNum` parameter from the VRF proof
+    /// * `c` - A `BigNum` parameter from the VRF proof
+    ///
+    /// # Returns
+    ///
+    /// * If successful, an `EcPoint` representing the computed U component
+    pub fn compute_u_component(
+        &mut self,
+        public_key_point: &EcPoint,
+        s: &BigNum,
+        c: &BigNum,
+    ) -> Result<EcPoint, Error> {
+        let mut s_b = EcPoint::new(self.group.as_ref())?;
+        let mut c_y = EcPoint::new(self.group.as_ref())?;
+        let mut u_point = EcPoint::new(self.group.as_ref())?;
+        s_b.mul_generator(&self.group, s, &self.bn_ctx)?;
+        c_y.mul(&self.group, public_key_point, c, &self.bn_ctx)?;
+        c_y.invert(&self.group, &self.bn_ctx)?;
+        u_point.add(&self.group, &s_b, &c_y, &mut self.bn_ctx)?;
+        Ok(u_point)
+    }
+
+    /// Computes intermediate points for VRF verification (sH and cGamma components)
+    /// These can be used to compute V = sH - cGamma
+    ///
+    /// # Arguments
+    ///
+    /// * `public_key_point` - An `EcPoint` referencing the public key
+    /// * `alpha` - The input data slice
+    /// * `decoded_proof` - Tuple containing (gamma_point, s, c) from decoded proof
+    ///
+    /// # Returns
+    ///
+    /// * If successful, an array containing [sH, cGamma] points
+    pub fn compute_v_component(
+        &mut self,
+        public_key_point: &EcPoint,
+        alpha: &[u8],
+        decoded_proof: &(&EcPoint, &BigNum, &BigNum),
+    ) -> Result<[EcPoint; 2], Error> {
+        let (gamma_point, s, c) = decoded_proof;
+
+        // Hash to curve
+        let h_point = self.hash_to_try_and_increment(public_key_point, alpha)?;
+
+        let mut s_h = EcPoint::new(self.group.as_ref())?;
+        let mut c_gamma = EcPoint::new(self.group.as_ref())?;
+        s_h.mul(&self.group, &h_point, s, &self.bn_ctx)?;
+        c_gamma.mul(&self.group, gamma_point, c, &self.bn_ctx)?;
+        Ok([s_h, c_gamma])
+    }
+
+    /// Computes V = sH - cGamma for VRF verification
+    ///
+    /// # Arguments
+    ///
+    /// * `components` - Array containing [sH, cGamma] points from compute_v_component
+    ///
+    /// # Returns
+    ///
+    /// * If successful, an `EcPoint` representing the computed V component
+    pub fn compute_v_point(&mut self, components: [EcPoint; 2]) -> Result<EcPoint, Error> {
+        let [s_h, mut c_gamma] = components;
+        let mut v_point = EcPoint::new(self.group.as_ref())?;
+        c_gamma.invert(&self.group, &self.bn_ctx)?;
+        v_point.add(&self.group, &s_h, &c_gamma, &mut self.bn_ctx)?;
+        Ok(v_point)
+    }
 }
 
 /// VRFs are objects capable of generating and verifying proofs.
@@ -556,22 +630,11 @@ impl VRF<&[u8], &[u8]> for ECVRF {
         let h_point = self.hash_to_try_and_increment(&public_key_point, alpha)?;
 
         // Step 3: U = sB -cY
-        let mut s_b = EcPoint::new(self.group.as_ref())?;
-        let mut c_y = EcPoint::new(self.group.as_ref())?;
-        let mut u_point = EcPoint::new(self.group.as_ref())?;
-        s_b.mul_generator(&self.group, &s, &self.bn_ctx)?;
-        c_y.mul(&self.group, &public_key_point, &c, &self.bn_ctx)?;
-        c_y.invert(&self.group, &self.bn_ctx)?;
-        u_point.add(&self.group, &s_b, &c_y, &mut self.bn_ctx)?;
+        let u_point = self.compute_u_component(&public_key_point, &s, &c)?;
 
         // Step 4: V = sH -cGamma
-        let mut s_h = EcPoint::new(self.group.as_ref())?;
-        let mut c_gamma = EcPoint::new(self.group.as_ref())?;
-        let mut v_point = EcPoint::new(self.group.as_ref())?;
-        s_h.mul(&self.group, &h_point, &s, &self.bn_ctx)?;
-        c_gamma.mul(&self.group, &gamma_point, &c, &self.bn_ctx)?;
-        c_gamma.invert(&self.group, &self.bn_ctx)?;
-        v_point.add(&self.group, &s_h, &c_gamma, &mut self.bn_ctx)?;
+        let v_components = self.compute_v_component(&public_key_point, alpha, &(&gamma_point, &c, &s))?;
+        let v_point = self.compute_v_point(v_components)?;
 
         // Step 5: hash points(...)
         let derived_c = self.hash_points(&[&h_point, &gamma_point, &u_point, &v_point])?;
