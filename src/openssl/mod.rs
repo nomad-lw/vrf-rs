@@ -455,6 +455,15 @@ impl ECVRF {
         Ok(hash)
     }
 
+    pub fn ecpoint_to_affine(&mut self, point: &EcPoint) -> Result<(BigNum, BigNum), Error> {
+        let mut x = BigNum::new()?;
+        let mut y = BigNum::new()?;
+
+        point.affine_coordinates(&self.group, &mut x, &mut y, &mut self.bn_ctx)?;
+
+        Ok((x, y))
+    }
+
     /// Computes the VRF hash output as result of the digest of a ciphersuite-dependent prefix
     /// concatenated with the gamma point ([VRF-draft-05](https://tools.ietf.org/pdf/draft-irtf-cfrg-vrf-05), section 5.2).
     ///
@@ -633,7 +642,8 @@ impl VRF<&[u8], &[u8]> for ECVRF {
         let u_point = self.compute_u_component(&public_key_point, &s, &c)?;
 
         // Step 4: V = sH -cGamma
-        let v_components = self.compute_v_component(&public_key_point, alpha, &(&gamma_point, &c, &s))?;
+        let v_components =
+            self.compute_v_component(&public_key_point, alpha, &(&gamma_point, &c, &s))?;
         let v_point = self.compute_v_point(v_components)?;
 
         // Step 5: hash points(...)
