@@ -217,6 +217,11 @@ impl ECVRF {
         Ok(bytes)
     }
 
+    pub fn decode_public_key(&mut self, public_key: &[u8]) -> Result<EcPoint, Error> {
+        let point = EcPoint::from_bytes(&self.group, public_key, &mut self.bn_ctx)?;
+        Ok(point)
+    }
+
     /// Generates a nonce deterministically by following the algorithm described in the [RFC6979](https://tools.ietf.org/html/rfc6979)
     /// (section 3.2. __Generation of k__).
     ///
